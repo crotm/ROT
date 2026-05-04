@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # CPython Android Ultimate Cross-Compiler
-# Features: NDK Sysroot Patching + Termux Native Lib Injection + Disabling Tests
+# Features: Dynamic NDK Sysroot Polyfills + Termux Native Lib Injection
 # ==============================================================================
 set -euo pipefail
 
@@ -32,17 +32,27 @@ TERMUX_CONFIGURE_ARGS=(
 )
 
 # ==============================================================================
-# 1. APPLY ANDROID NDK / SDK SYSROOT PATCHES
+# 1. DYNAMIC ANDROID NDK / SDK SYSROOT POLYFILLS
 # ==============================================================================
-echo "[*] Patching Android NDK/SDK Sysroot..."
+echo "[*] Injecting Android NDK/SDK Sysroot Polyfills..."
 NDK_SYSROOT="${TOOLCHAIN}/sysroot"
 
-if [ -d "patches/ndk" ]; then
-    for patch_file in patches/ndk/*.patch; do
-        [ -f "$patch_file" ] || continue
-        echo "   -> Applying NDK patch: $(basename "$patch_file")"
-        (cd "${NDK_SYSROOT}" && patch -p1 --forward --fuzz=0 < "${WORKSPACE_DIR}/${patch_file}" || true)
-    done
+# Inject grp.h polyfills (safely checking if already patched)
+if ! grep -q "getgrent" "${NDK_SYSROOT}/usr/include/grp.h"; then
+    echo "   -> Polyfilling grp.h"
+    sed -i 's/__END_DECLS/\/* NDK Polyfill *\/\nstatic __inline__ struct group* getgrent(void) { return 0; }\nstatic __inline__ void setgrent(void) {}\nstatic __inline__ void endgrent(void) {}\n\n__END_DECLS/g' "${NDK_SYSROOT}/usr/include/grp.h"
+fi
+
+# Inject pwd.h polyfills
+if ! grep -q "getpwent" "${NDK_SYSROOT}/usr/include/pwd.h"; then
+    echo "   -> Polyfilling pwd.h"
+    sed -i 's/__END_DECLS/\/* NDK Polyfill *\/\nstatic __inline__ struct passwd* getpwent(void) { return 0; }\nstatic __inline__ void setpwent(void) {}\nstatic __inline__ void endpwent(void) {}\n\n__END_DECLS/g' "${NDK_SYSROOT}/usr/include/pwd.h"
+fi
+
+# Inject langinfo.h polyfills
+if ! grep -q "_NL_ITEM" "${NDK_SYSROOT}/usr/include/langinfo.h"; then
+    echo "   -> Polyfilling langinfo.h"
+    sed -i 's/__BEGIN_DECLS/__BEGIN_DECLS\n\n#ifndef _NL_ITEM\ntypedef int _NL_ITEM;\n#endif\n/g' "${NDK_SYSROOT}/usr/include/langinfo.h"
 fi
 
 # ==============================================================================
@@ -81,9 +91,10 @@ for version in "${PYTHON_VERSIONS[@]}"; do
         git clone --depth 1 --branch "${branch}" https://github.com/python/cpython.git "${src_dir}"
     fi
 
-    # Apply Hybrid CPython Patches
-    if [ -d "patches/cpython" ]; then
+    # Apply Hybrid CPython Patches (Syntax cleanly separated)
+    if[ -d "patches/cpython" ]; then
         for patch_file in patches/cpython/*.patch; do[ -f "$patch_file" ] || continue
+            echo "   -> Applying CPython Patch: $(basename "$patch_file")"
             cp "$patch_file" /tmp/current.patch
             sed -i "s|@TERMUX_PREFIX@|${TERMUX_PREFIX}|g" /tmp/current.patch
             sed -i "s|@TERMUX_PKG_API_LEVEL@|${API_LEVEL}|g" /tmp/current.patch
