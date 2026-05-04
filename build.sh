@@ -41,7 +41,7 @@ if [ -d "patches/ndk" ]; then
     for patch_file in patches/ndk/*.patch; do
         [ -f "$patch_file" ] || continue
         echo "   -> Applying NDK patch: $(basename "$patch_file")"
-        (cd "${NDK_SYSROOT}" && patch -p1 --forward --fuzz=3 < "${WORKSPACE_DIR}/${patch_file}" || true)
+        (cd "${NDK_SYSROOT}" && patch -p1 --forward --fuzz=0 < "${WORKSPACE_DIR}/${patch_file}" || true)
     done
 fi
 
