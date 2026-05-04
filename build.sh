@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # CPython Android Ultimate Cross-Compiler
-# Features: Dynamic NDK Sysroot Polyfills + Termux Native Lib Injection
+# Features: Dynamic NDK Polyfills + Termux Native Lib Injection + API Scaling
 # ==============================================================================
 set -euo pipefail
 
@@ -15,6 +15,7 @@ WORKSPACE_DIR="$(pwd)"
 OUTPUT_DIR="${WORKSPACE_DIR}/output"
 TERMUX_PREFIX="/data/data/com.termux/files/usr"
 
+# Base configuration arguments
 TERMUX_CONFIGURE_ARGS=(
     "ac_cv_file__dev_ptmx=yes" "ac_cv_file__dev_ptc=no" "ac_cv_func_wcsftime=no"
     "ac_cv_func_ftime=no" "ac_cv_func_faccessat=no" "ac_cv_func_link=no"
@@ -22,14 +23,29 @@ TERMUX_CONFIGURE_ARGS=(
     "ac_cv_posix_semaphores_enabled=yes" "ac_cv_func_sem_open=yes" "ac_cv_func_sem_timedwait=yes"
     "ac_cv_func_sem_getvalue=yes" "ac_cv_func_sem_unlink=yes" "ac_cv_func_shm_open=yes"
     "ac_cv_func_shm_unlink=yes" "ac_cv_working_tzset=yes" "ac_cv_header_sys_xattr_h=no"
-    "ac_cv_func_getgrent=yes" "ac_cv_func_fexecve=no" "ac_cv_func_getlogin_r=no"
-    "ac_cv_func_getloadavg=no" "ac_cv_func_sem_clockwait=no"
+    "ac_cv_func_getgrent=yes"
     "--without-ensurepip" "--enable-loadable-sqlite-extensions"
-    "--enable-shared" "--enable-optimizations" "--with-lto" "--with-system-ffi"
-    
-    # Highly shrink payload and compile time by skipping internal test modules
+    "--enable-shared" "--enable-optimizations" "--with-lto" 
+    "--with-system-ffi" "--with-system-expat"
     "--disable-test-modules"
 )
+
+# Apply dynamic constraints based on API Level
+if [[ "$API_LEVEL" -lt 28 ]]; then
+    TERMUX_CONFIGURE_ARGS+=("ac_cv_func_fexecve=no" "ac_cv_func_getlogin_r=no")
+fi
+if [[ "$API_LEVEL" -lt 29 ]]; then
+    TERMUX_CONFIGURE_ARGS+=("ac_cv_func_getloadavg=no")
+fi
+if [[ "$API_LEVEL" -lt 30 ]]; then
+    TERMUX_CONFIGURE_ARGS+=("ac_cv_func_sem_clockwait=no")
+fi
+if [[ "$API_LEVEL" -lt 33 ]]; then
+    TERMUX_CONFIGURE_ARGS+=("ac_cv_func_preadv2=no" "ac_cv_func_pwritev2=no")
+fi
+if [[ "$API_LEVEL" -lt 34 ]]; then
+    TERMUX_CONFIGURE_ARGS+=("ac_cv_func_close_range=no" "ac_cv_func_copy_file_range=no")
+fi
 
 # ==============================================================================
 # 1. DYNAMIC ANDROID NDK / SDK SYSROOT POLYFILLS
@@ -37,19 +53,16 @@ TERMUX_CONFIGURE_ARGS=(
 echo "[*] Injecting Android NDK/SDK Sysroot Polyfills..."
 NDK_SYSROOT="${TOOLCHAIN}/sysroot"
 
-# Inject grp.h polyfills (safely checking if already patched)
 if ! grep -q "getgrent" "${NDK_SYSROOT}/usr/include/grp.h"; then
     echo "   -> Polyfilling grp.h"
     sed -i 's/__END_DECLS/\/* NDK Polyfill *\/\nstatic __inline__ struct group* getgrent(void) { return 0; }\nstatic __inline__ void setgrent(void) {}\nstatic __inline__ void endgrent(void) {}\n\n__END_DECLS/g' "${NDK_SYSROOT}/usr/include/grp.h"
 fi
 
-# Inject pwd.h polyfills
 if ! grep -q "getpwent" "${NDK_SYSROOT}/usr/include/pwd.h"; then
     echo "   -> Polyfilling pwd.h"
     sed -i 's/__END_DECLS/\/* NDK Polyfill *\/\nstatic __inline__ struct passwd* getpwent(void) { return 0; }\nstatic __inline__ void setpwent(void) {}\nstatic __inline__ void endpwent(void) {}\n\n__END_DECLS/g' "${NDK_SYSROOT}/usr/include/pwd.h"
 fi
 
-# Inject langinfo.h polyfills
 if ! grep -q "_NL_ITEM" "${NDK_SYSROOT}/usr/include/langinfo.h"; then
     echo "   -> Polyfilling langinfo.h"
     sed -i 's/__BEGIN_DECLS/__BEGIN_DECLS\n\n#ifndef _NL_ITEM\ntypedef int _NL_ITEM;\n#endif\n/g' "${NDK_SYSROOT}/usr/include/langinfo.h"
@@ -67,12 +80,17 @@ fetch_termux_deps() {
     mkdir -p "${sysroot}/tmp/apt"
     curl -sL "${mirror}/dists/stable/main/binary-${arch}/Packages" > "${sysroot}/tmp/apt/Packages"
     
-    local deps=("openssl" "libffi" "zlib" "sqlite" "readline" "bzip2" "xz-utils" "libandroid-posix-semaphore")
+    # Combined TERMUX_PKG_DEPENDS and TERMUX_PKG_BUILD_DEPENDS
+    local deps=("gdbm" "libandroid-posix-semaphore" "libandroid-support" "libbz2" "libcrypt" "libexpat" "libffi" "liblzma" "libsqlite" "ncurses" "ncurses-ui-libs" "openssl" "readline" "zlib" "tk")
+    
     for pkg in "${deps[@]}"; do
-        deb_path=$(grep -A 10 "Package: ${pkg}$" "${sysroot}/tmp/apt/Packages" | grep "Filename:" | head -n 1 | awk '{print $2}')
+        # Extract filename strictly matching the package name
+        deb_path=$(grep -A 10 "^Package: ${pkg}$" "${sysroot}/tmp/apt/Packages" | grep "^Filename:" | head -n 1 | awk '{print $2}')
         if [ -n "$deb_path" ]; then
             curl -sL "${mirror}/${deb_path}" -o "${sysroot}/tmp/apt/${pkg}.deb"
             dpkg-deb -x "${sysroot}/tmp/apt/${pkg}.deb" "${sysroot}"
+        else
+            echo "   [!] Warning: Package $pkg not found for architecture $arch"
         fi
     done
 }
@@ -91,14 +109,16 @@ for version in "${PYTHON_VERSIONS[@]}"; do
         git clone --depth 1 --branch "${branch}" https://github.com/python/cpython.git "${src_dir}"
     fi
 
-    # Apply Hybrid CPython Patches (Syntax cleanly separated)
+    # Apply Hybrid CPython Patches securely
     if[ -d "patches/cpython" ]; then
-        for patch_file in patches/cpython/*.patch; do[ -f "$patch_file" ] || continue
-            echo "   -> Applying CPython Patch: $(basename "$patch_file")"
-            cp "$patch_file" /tmp/current.patch
-            sed -i "s|@TERMUX_PREFIX@|${TERMUX_PREFIX}|g" /tmp/current.patch
-            sed -i "s|@TERMUX_PKG_API_LEVEL@|${API_LEVEL}|g" /tmp/current.patch
-            (cd "${src_dir}" && patch -p1 --forward --fuzz=3 < "/tmp/current.patch" || true)
+        for patch_file in patches/cpython/*.patch; do
+            if[ -f "$patch_file" ]; then
+                echo "   -> Applying CPython Patch: $(basename "$patch_file")"
+                cp "$patch_file" /tmp/current.patch
+                sed -i "s|@TERMUX_PREFIX@|${TERMUX_PREFIX}|g" /tmp/current.patch
+                sed -i "s|@TERMUX_PKG_API_LEVEL@|${API_LEVEL}|g" /tmp/current.patch
+                (cd "${src_dir}" && patch -p1 --forward --fuzz=3 < "/tmp/current.patch" || true)
+            fi
         done
     fi
 
@@ -134,7 +154,9 @@ for version in "${PYTHON_VERSIONS[@]}"; do
         export PKG_CONFIG=""
         export PKG_CONFIG_LIBDIR="${sysroot}${TERMUX_PREFIX}/lib/pkgconfig"
         export CFLAGS="-O3 -fPIC -I${sysroot}${TERMUX_PREFIX}/include"
-        export LDFLAGS="-Wl,-O1 -L${sysroot}${TERMUX_PREFIX}/lib -landroid-posix-semaphore"
+        
+        # Link against the freshly downloaded Termux libraries (Semaphore & Support)
+        export LDFLAGS="-Wl,-O1 -L${sysroot}${TERMUX_PREFIX}/lib -landroid-posix-semaphore -landroid-support"
 
         ../${src_dir}/configure --host="${triple}" --build=x86_64-linux-gnu \
             --with-build-python="../${native_dir}/python" --prefix="${dest}" \
