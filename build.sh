@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ==============================================================================
 # CPython Android Ultimate Cross-Compiler
 # Features: NDK Sysroot Patching + Termux Native Lib Injection + Disabling Tests
@@ -36,10 +36,11 @@ TERMUX_CONFIGURE_ARGS=(
 # ==============================================================================
 echo "[*] Patching Android NDK/SDK Sysroot..."
 NDK_SYSROOT="${TOOLCHAIN}/sysroot"
-if[ -d "patches/ndk" ]; then
-    for patch_file in patches/ndk/*.patch; do[ -f "$patch_file" ] || continue
+
+if [ -d "patches/ndk" ]; then
+    for patch_file in patches/ndk/*.patch; do
+        [ -f "$patch_file" ] || continue
         echo "   -> Applying NDK patch: $(basename "$patch_file")"
-        # We now use $WORKSPACE_DIR to point accurately to the patch file
         (cd "${NDK_SYSROOT}" && patch -p1 --forward --fuzz=3 < "${WORKSPACE_DIR}/${patch_file}" || true)
     done
 fi
@@ -59,8 +60,7 @@ fetch_termux_deps() {
     local deps=("openssl" "libffi" "zlib" "sqlite" "readline" "bzip2" "xz-utils" "libandroid-posix-semaphore")
     for pkg in "${deps[@]}"; do
         deb_path=$(grep -A 10 "Package: ${pkg}$" "${sysroot}/tmp/apt/Packages" | grep "Filename:" | head -n 1 | awk '{print $2}')
-        # Fixed bash spacing error here
-        if[ -n "$deb_path" ]; then
+        if [ -n "$deb_path" ]; then
             curl -sL "${mirror}/${deb_path}" -o "${sysroot}/tmp/apt/${pkg}.deb"
             dpkg-deb -x "${sysroot}/tmp/apt/${pkg}.deb" "${sysroot}"
         fi
@@ -82,10 +82,8 @@ for version in "${PYTHON_VERSIONS[@]}"; do
     fi
 
     # Apply Hybrid CPython Patches
-    # Fixed bash spacing errors here
-    if[ -d "patches/cpython" ]; then
-        for patch_file in patches/cpython/*.patch; do
-            [ -f "$patch_file" ] || continue
+    if [ -d "patches/cpython" ]; then
+        for patch_file in patches/cpython/*.patch; do[ -f "$patch_file" ] || continue
             cp "$patch_file" /tmp/current.patch
             sed -i "s|@TERMUX_PREFIX@|${TERMUX_PREFIX}|g" /tmp/current.patch
             sed -i "s|@TERMUX_PKG_API_LEVEL@|${API_LEVEL}|g" /tmp/current.patch
