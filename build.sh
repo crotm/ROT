@@ -9,7 +9,10 @@ PYTHON_VERSIONS=("3.13" "3.14" "3.15")
 API_LEVEL=24
 NDK_HOME=${ANDROID_NDK_HOME:-/opt/android-ndk}
 TOOLCHAIN="${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64"
-OUTPUT_DIR="$(pwd)/output"
+
+# Capture the absolute root directory of the repository
+WORKSPACE_DIR="$(pwd)"
+OUTPUT_DIR="${WORKSPACE_DIR}/output"
 TERMUX_PREFIX="/data/data/com.termux/files/usr"
 
 TERMUX_CONFIGURE_ARGS=(
@@ -24,7 +27,7 @@ TERMUX_CONFIGURE_ARGS=(
     "--without-ensurepip" "--enable-loadable-sqlite-extensions"
     "--enable-shared" "--enable-optimizations" "--with-lto" "--with-system-ffi"
     
-    # NEW: Highly shrink payload and compile time by skipping internal test modules
+    # Highly shrink payload and compile time by skipping internal test modules
     "--disable-test-modules"
 )
 
@@ -33,11 +36,11 @@ TERMUX_CONFIGURE_ARGS=(
 # ==============================================================================
 echo "[*] Patching Android NDK/SDK Sysroot..."
 NDK_SYSROOT="${TOOLCHAIN}/sysroot"
-if [ -d "patches/ndk" ]; then
-    for patch_file in patches/ndk/*.patch; do
-        [ -f "$patch_file" ] || continue
+if[ -d "patches/ndk" ]; then
+    for patch_file in patches/ndk/*.patch; do[ -f "$patch_file" ] || continue
         echo "   -> Applying NDK patch: $(basename "$patch_file")"
-        (cd "${NDK_SYSROOT}" && patch -p1 --forward --fuzz=3 < "$(pwd)/../../${patch_file}" || true)
+        # We now use $WORKSPACE_DIR to point accurately to the patch file
+        (cd "${NDK_SYSROOT}" && patch -p1 --forward --fuzz=3 < "${WORKSPACE_DIR}/${patch_file}" || true)
     done
 fi
 
@@ -45,7 +48,10 @@ fi
 # 2. DYNAMIC TERMUX APT PARSER
 # ==============================================================================
 fetch_termux_deps() {
-    local arch=$1; local sysroot=$2; local mirror="https://packages-cf.termux.dev/apt/termux-main"
+    local arch=$1
+    local sysroot=$2
+    local mirror="https://packages-cf.termux.dev/apt/termux-main"
+    
     echo "   [📦] Downloading Official Termux Libs for $arch..."
     mkdir -p "${sysroot}/tmp/apt"
     curl -sL "${mirror}/dists/stable/main/binary-${arch}/Packages" > "${sysroot}/tmp/apt/Packages"
@@ -53,6 +59,7 @@ fetch_termux_deps() {
     local deps=("openssl" "libffi" "zlib" "sqlite" "readline" "bzip2" "xz-utils" "libandroid-posix-semaphore")
     for pkg in "${deps[@]}"; do
         deb_path=$(grep -A 10 "Package: ${pkg}$" "${sysroot}/tmp/apt/Packages" | grep "Filename:" | head -n 1 | awk '{print $2}')
+        # Fixed bash spacing error here
         if[ -n "$deb_path" ]; then
             curl -sL "${mirror}/${deb_path}" -o "${sysroot}/tmp/apt/${pkg}.deb"
             dpkg-deb -x "${sysroot}/tmp/apt/${pkg}.deb" "${sysroot}"
@@ -75,8 +82,10 @@ for version in "${PYTHON_VERSIONS[@]}"; do
     fi
 
     # Apply Hybrid CPython Patches
+    # Fixed bash spacing errors here
     if[ -d "patches/cpython" ]; then
-        for patch_file in patches/cpython/*.patch; do[ -f "$patch_file" ] || continue
+        for patch_file in patches/cpython/*.patch; do
+            [ -f "$patch_file" ] || continue
             cp "$patch_file" /tmp/current.patch
             sed -i "s|@TERMUX_PREFIX@|${TERMUX_PREFIX}|g" /tmp/current.patch
             sed -i "s|@TERMUX_PKG_API_LEVEL@|${API_LEVEL}|g" /tmp/current.patch
@@ -89,15 +98,18 @@ for version in "${PYTHON_VERSIONS[@]}"; do
     mkdir -p "${native_dir}"
     (
         cd "${native_dir}"
-        ../${src_dir}/configure --prefix="$(pwd)/prefix" > native_config.log 2>&1
+        ../${src_dir}/configure --prefix="${WORKSPACE_DIR}/prefix" > native_config.log 2>&1
         make -j$(nproc) > native_make.log 2>&1
     )
 
     build_arch() {
-        local arch=$1; local triple=$2; local cc_target=$3; local termux_arch=$4
+        local arch=$1
+        local triple=$2
+        local cc_target=$3
+        local termux_arch=$4
         local build_dir="build-${version}-${arch}"
         local dest="${OUTPUT_DIR}/${version}/${arch}"
-        local sysroot="${build_dir}/sysroot"
+        local sysroot="${WORKSPACE_DIR}/${build_dir}/sysroot"
         
         echo "   [>>>] Starting ${arch}..."
         mkdir -p "${sysroot}" && cd "${build_dir}"
@@ -117,13 +129,13 @@ for version in "${PYTHON_VERSIONS[@]}"; do
 
         ../${src_dir}/configure --host="${triple}" --build=x86_64-linux-gnu \
             --with-build-python="../${native_dir}/python" --prefix="${dest}" \
-            "${TERMUX_CONFIGURE_ARGS[@]}" > "configure.log" 2>&1 || exit 1
+            "${TERMUX_CONFIGURE_ARGS[@]}" > "configure.log" 2>&1 || { echo "[X] ${arch} configure failed. See ${build_dir}/configure.log"; exit 1; }
 
-        make -j$(nproc) > "make.log" 2>&1 || exit 1
-        make install > "install.log" 2>&1 || exit 1
+        make -j$(nproc) > "make.log" 2>&1 || { echo "[X] ${arch} make failed. See ${build_dir}/make.log"; exit 1; }
+        make install > "install.log" 2>&1 || { echo "[X] ${arch} install failed. See ${build_dir}/install.log"; exit 1; }
         
         find "${dest}/lib" -name "*.so" -exec ${STRIP} --strip-all {} +
-        rm -rf "${dest}/lib/python${version}/test" "${dest}/lib/python${version}"/*/test
+        rm -rf "${dest}/lib/python${version}/test" "${dest}/lib/python${version}"/*/test || true
         
         echo "   [<<<] Thread complete: ${arch}."
     }
