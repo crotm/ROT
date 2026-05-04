@@ -1,0 +1,12 @@
+--- a/Lib/ctypes/util.py
++++ b/Lib/ctypes/util.py
+@@ -172,7 +172,7 @@
+-            objdump = shutil.which('objdump')
++            objdump = shutil.which('llvm-objdump') or shutil.which('objdump')
+@@ -209,7 +209,9 @@
+-                proc = subprocess.Popen(('/sbin/ldconfig', '-r'),
++                ldconfig_cmd = '@TERMUX_PREFIX@/bin/ldconfig' if os.path.exists('@TERMUX_PREFIX@/bin/ldconfig') else '/sbin/ldconfig'
++                proc = subprocess.Popen((ldconfig_cmd, '-r'),
+@@ -300,7 +302,7 @@
+-            cmd =['ld', '-t']
++            cmd = ['ld.lld', '-t']

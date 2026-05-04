@@ -1,0 +1,6 @@
+--- a/Modules/makesetup
++++ b/Modules/makesetup
+@@ -274,7 +274,7 @@
+                        rule="$file: $objs"
+-                       rule="$rule; \$(BLDSHARED) $objs $libs \$(LIBPYTHON) -o $file"
++                       rule="$rule; \$(BLDSHARED) $objs $libs \$(BLDLIBRARY) -o $file"

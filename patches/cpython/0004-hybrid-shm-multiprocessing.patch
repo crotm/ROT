@@ -1,0 +1,21 @@
+--- a/Lib/multiprocessing/heap.py
++++ b/Lib/multiprocessing/heap.py
+@@ -70,7 +70,7 @@
+ 
+         if sys.platform == 'linux':
+-            _dir_candidates =['/dev/shm']
++            _dir_candidates =[]
+--- a/Modules/_multiprocessing/posixshmem.c
++++ b/Modules/_multiprocessing/posixshmem.c
+@@ -11,6 +11,19 @@
++#ifdef __ANDROID__
++#include <alloca.h>
++#include <fcntl.h>
++#include <unistd.h>
++static const char* get_shm_dir() {
++    if (access("@TERMUX_PREFIX@/tmp", W_OK) == 0) return "@TERMUX_PREFIX@/tmp/";
++    return "/data/local/tmp/";
++}
++#define shm_unlink(name) unlink(name)
++#define shm_open(name, oflag, mode) open(name, oflag, mode)
++#endif

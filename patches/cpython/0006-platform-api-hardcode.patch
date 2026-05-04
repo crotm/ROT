@@ -1,0 +1,10 @@
+--- a/Lib/platform.py
++++ b/Lib/platform.py
+@@ -599,7 +599,7 @@
+             release = getprop("ro.build.version.release", release)
+-            api_level = int(getprop("ro.build.version.sdk", api_level))
++            api_level = @TERMUX_PKG_API_LEVEL@
+@@ -1245,6 +1245,9 @@
+     system = uname().system
++    if hasattr(sys, 'getandroidapilevel') or '@TERMUX_PKG_API_LEVEL@' != '':
++        return 'android'

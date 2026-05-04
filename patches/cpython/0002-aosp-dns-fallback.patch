@@ -1,0 +1,26 @@
+--- a/Modules/socketmodule.c
++++ b/Modules/socketmodule.c
+@@ -165,6 +165,10 @@
+ #  endif
+ #endif
+ 
++#ifdef __ANDROID__
++#include <sys/system_properties.h>
++#endif
++
+ #if defined(HAVE_POLL_H)
+ #include <poll.h>
+@@ -6289,6 +6293,14 @@
+     PyObject *res;
+     int err;
+ 
++#ifdef __ANDROID__
++    char dns_prop[PROP_VALUE_MAX];
++    if (__system_property_get("net.dns1", dns_prop) > 0) {
++        if (strcmp(name, "localhost") == 0) {
++            return Py_BuildValue("s", "127.0.0.1");
++        }
++    }
++#endif
+     Py_BEGIN_ALLOW_THREADS
+     err = gethostbyname_r(name, &hbuf, buf, sizeof(buf), &hptr, &herr);

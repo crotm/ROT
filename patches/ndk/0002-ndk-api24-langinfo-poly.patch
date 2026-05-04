@@ -1,0 +1,13 @@
+--- a/usr/include/langinfo.h
++++ b/usr/include/langinfo.h
+@@ -34,6 +34,10 @@
+ 
+ __BEGIN_DECLS
+ 
++#ifndef _NL_ITEM
++typedef int _NL_ITEM;
++#endif
++
+ #define CODESET 1
+ #define D_T_FMT 2
+ #define D_FMT 3

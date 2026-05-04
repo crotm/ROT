@@ -1,0 +1,10 @@
+--- a/Makefile.pre.in
++++ b/Makefile.pre.in
+@@ -917,7 +917,7 @@
+        if test $(INSTSONAME) != $@; then \
+-               $(LN) -f $(INSTSONAME) $@; \
++               $(LN) -sf $(INSTSONAME) $@; \
+        fi
+@@ -2202,7 +2202,7 @@
+-               (cd $(DESTDIR)$(BINDIR); $(LN) python$(LDVERSION)$(EXE) python$(VERSION)$(EXE)); \
++               (cd $(DESTDIR)$(BINDIR); $(LN) -s python$(LDVERSION)$(EXE) python$(VERSION)$(EXE)); \

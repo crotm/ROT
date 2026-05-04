@@ -1,0 +1,37 @@
+--- a/Lib/subprocess.py
++++ b/Lib/subprocess.py
+@@ -1389,9 +1389,11 @@
+                 args = list(args)
+             if shell:
+-                unix_shell = ('/system/bin/sh' if
+-                          hasattr(sys, 'getandroidapilevel') else '/bin/sh')
++                import os
++                if os.path.exists('@TERMUX_PREFIX@/bin/sh'):
++                    unix_shell = '@TERMUX_PREFIX@/bin/sh'
++                else:
++                    unix_shell = '/system/bin/sh' if hasattr(sys, 'getandroidapilevel') else '/bin/sh'
+                 args =[unix_shell, "-c"] + args
+--- a/Lib/tempfile.py
++++ b/Lib/tempfile.py
+@@ -124,7 +124,8 @@
+     if _os.name == 'nt':
+         dirlist.extend([ r'c:\temp', r'c:\tmp', r'\temp', r'\tmp' ])
+     else:
+-        dirlist.extend([ '/tmp', '/var/tmp', '/usr/tmp' ])
++        dirlist.extend([ '@TERMUX_PREFIX@/tmp', '/data/local/tmp', '/tmp', '/var/tmp', '/usr/tmp' ])
+--- a/Lib/mimetypes.py
++++ b/Lib/mimetypes.py
+@@ -49,6 +49,7 @@
+     "/usr/local/lib/netscape/mime.types",
+     "/usr/local/etc/httpd/conf/mime.types",
+     "/usr/local/etc/mime.types",
++    "@TERMUX_PREFIX@/etc/mime.types",
+     ]
+--- a/Lib/posixpath.py
++++ b/Lib/posixpath.py
+@@ -32,7 +32,7 @@
+ extsep = '.'
+ sep = '/'
+ pathsep = ':'
+-defpath = '/bin:/usr/bin'
++defpath = '@TERMUX_PREFIX@/bin:/system/bin:/bin:/usr/bin'

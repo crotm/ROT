@@ -1,0 +1,64 @@
+name: GHCR Hybrid Builder Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-release:
+    name: Build, Patch Sysroot & Release
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.2.2
+
+      - name: Set up Image ID
+        run: echo "IMAGE_ID=${REGISTRY}/${GITHUB_REPOSITORY,,}:latest" >> $GITHUB_ENV
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ${{ env.REGISTRY }} \
+          -u "${{ github.actor }}" --password-stdin
+
+      - name: Build & Push GHCR Environment
+        run: |
+          docker build -t $IMAGE_ID .
+          docker push $IMAGE_ID
+
+      - name: Execute Native Cross-Compile (Container)
+        run: |
+          chmod +x build.sh
+          docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace $IMAGE_ID ./build.sh
+
+      - name: Compress Outputs (.tar.xz)
+        run: |
+          cd output
+          [ -d "3.13" ] && tar -cJf python-3.13-hybrid.tar.xz -C 3.13 .
+          [ -d "3.14" ] && tar -cJf python-3.14-hybrid.tar.xz -C 3.14 .
+          [ -d "3.15" ] && tar -cJf python-3.15-hybrid.tar.xz -C 3.15 .
+
+      - name: Publish "pyb" Rolling Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG_NAME="pyb"
+          # Purge old rolling release tags securely
+          gh release delete "$TAG_NAME" --cleanup-tag -y || true
+          # Publish new rolling release with hybrid binaries
+          gh release create "$TAG_NAME" output/*.tar.xz \
+            --title "Rolling Release: pyb" \
+            --notes "Android Python with **Dual NDK & CPython Patching**.
+            * Configured with \`--disable-test-modules\` for ultra-lean payload sizes.
+            * Polyfilled Android NDK Sysroot (grp.h / pwd.h / langinfo.h).
+            * Condensed into 10 high-efficiency CPython hybrid patches.
+            * Pre-linked to official Termux APT OpenSSL, LibFFI, Zlib, and SQLite." \
+            --target ${{ github.sha }}

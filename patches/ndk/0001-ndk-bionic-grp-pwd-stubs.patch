@@ -1,0 +1,24 @@
+--- a/usr/include/grp.h
++++ b/usr/include/grp.h
+@@ -55,6 +55,10 @@
+ int getgrnam_r(const char* _Nonnull __name, struct group* _Nonnull __group, char* _Nonnull __buf, size_t __n, struct group*_Nullable *_Nonnull __result);
+ int getgrgid_r(gid_t __gid, struct group* _Nonnull __group, char* _Nonnull __buf, size_t __n, struct group*_Nullable *_Nonnull __result);
+ 
++/* NDK/SDK Stub for Python's grp module */
++static __inline__ struct group* getgrent(void) { return 0; }
++static __inline__ void setgrent(void) {}
++static __inline__ void endgrent(void) {}
++
+ __END_DECLS
+--- a/usr/include/pwd.h
++++ b/usr/include/pwd.h
+@@ -52,6 +52,10 @@
+ int getpwnam_r(const char* _Nonnull __name, struct passwd* _Nonnull __pwd, char* _Nonnull __buf, size_t __n, struct passwd*_Nullable *_Nonnull __result);
+ int getpwuid_r(uid_t __uid, struct passwd* _Nonnull __pwd, char* _Nonnull __buf, size_t __n, struct passwd*_Nullable *_Nonnull __result);
+ 
++/* NDK/SDK Stub for Python's pwd module */
++static __inline__ struct passwd* getpwent(void) { return 0; }
++static __inline__ void setpwent(void) {}
++static __inline__ void endpwent(void) {}
++
+ __END_DECLS
