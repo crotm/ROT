@@ -5,7 +5,6 @@
 # ==============================================================================
 set -euo pipefail
 
-# Specific URLs provided
 PYTHON_URLS=(
     "https://www.python.org/ftp/python/3.13.13/Python-3.13.13.tar.xz"
     "https://www.python.org/ftp/python/3.14.5/Python-3.14.5rc1.tar.xz"
@@ -15,12 +14,11 @@ PYTHON_URLS=(
 API_LEVEL=24
 NDK_HOME="${ANDROID_NDK_HOME:-/opt/android-ndk}"
 TOOLCHAIN="${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64"
-
 WORKSPACE_DIR="$(pwd)"
 OUTPUT_DIR="${WORKSPACE_DIR}/output"
 TERMUX_PREFIX="/data/data/com.termux/files/usr"
 
-# Base configuration arguments
+# Optimization: Disable tests and enable shared/LTO
 TERMUX_CONFIGURE_ARGS=(
     "ac_cv_file__dev_ptmx=yes" "ac_cv_file__dev_ptc=no" "ac_cv_func_wcsftime=no"
     "ac_cv_func_ftime=no" "ac_cv_func_faccessat=no" "ac_cv_func_link=no"
@@ -34,7 +32,7 @@ TERMUX_CONFIGURE_ARGS=(
     "--with-system-ffi" "--with-system-expat" "--disable-test-modules"
 )
 
-# Apply dynamic constraints based on API Level
+# Dynamic API Level Overrides
 if [ "${API_LEVEL}" -lt 28 ]; then
     TERMUX_CONFIGURE_ARGS+=("ac_cv_func_fexecve=no" "ac_cv_func_getlogin_r=no")
 fi
@@ -53,7 +51,7 @@ if ! grep -q "_NL_ITEM" "${NDK_SYSROOT}/usr/include/langinfo.h"; then
     sed -i 's/__BEGIN_DECLS/__BEGIN_DECLS\n\n#ifndef _NL_ITEM\ntypedef int _NL_ITEM;\n#endif\n/g' "${NDK_SYSROOT}/usr/include/langinfo.h"
 fi
 
-# 2. TERMUX APT PARSER
+# 2. TERMUX APT DEPENDENCY INJECTION
 fetch_termux_deps() {
     local arch="$1"; local sysroot="$2"; local mirror="https://packages-cf.termux.dev/apt/termux-main"
     echo "   [📦] Fetching Official Termux Libs for ${arch}..."
@@ -103,4 +101,53 @@ for url in "${PYTHON_URLS[@]}"; do
     mkdir -p "${native_dir}"
     (
         cd "${native_dir}"
-        ../"${src_dir}"/configure --prefix=
+        ../"${src_dir}"/configure --prefix="${WORKSPACE_DIR}/prefix" > native_config.log 2>&1
+        make -j"$(nproc)" > native_make.log 2>&1
+    )
+
+    build_arch() {
+        local arch="$1"; local triple="$2"; local cc_target="$3"; local termux_arch="$4"
+        local build_dir="build-${ver}-${arch}"
+        local dest="${OUTPUT_DIR}/${ver}/${arch}"
+        local sysroot="${WORKSPACE_DIR}/${build_dir}/sysroot"
+        
+        echo "   [>>>] Starting ${arch}..."
+        mkdir -p "${sysroot}" && cd "${build_dir}"
+        fetch_termux_deps "${termux_arch}" "${sysroot}"
+
+        export CC="${TOOLCHAIN}/bin/${cc_target}${API_LEVEL}-clang"
+        export CXX="${TOOLCHAIN}/bin/${cc_target}${API_LEVEL}-clang++"
+        export AR="${TOOLCHAIN}/bin/llvm-ar"
+        export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
+        export STRIP="${TOOLCHAIN}/bin/llvm-strip"
+        
+        export PKG_CONFIG=""
+        export PKG_CONFIG_LIBDIR="${sysroot}${TERMUX_PREFIX}/lib/pkgconfig"
+        export CFLAGS="-O3 -fPIC -I${sysroot}${TERMUX_PREFIX}/include"
+        export LDFLAGS="-Wl,-O1 -L${sysroot}${TERMUX_PREFIX}/lib -landroid-posix-semaphore -landroid-support"
+
+        ../"${src_dir}"/configure --host="${triple}" --build=x86_64-linux-gnu \
+            --with-build-python="../${native_dir}/python" --prefix="${dest}" \
+            "${TERMUX_CONFIGURE_ARGS[@]}" > "configure.log" 2>&1 || exit 1
+
+        make -j"$(nproc)" > "make.log" 2>&1
+        make install > "install.log" 2>&1
+        
+        find "${dest}/lib" -name "*.so" -exec "${STRIP}" --strip-all {} +
+        # SC2046 Fix
+        py_short=$(echo "${ver}" | cut -d. -f1,2)
+        rm -rf "${dest}/lib/python${py_short}/test" || true
+        echo "   [<<<] Thread complete: ${arch}."
+    }
+
+    pids=()
+    build_arch "arm64-v8a"   "aarch64-linux-android"    "aarch64-linux-android" "aarch64" & pids+=("$!")
+    build_arch "armeabi-v7a" "armv7a-linux-androideabi" "armv7a-linux-androideabi" "arm" & pids+=("$!")
+    build_arch "x86_64"      "x86_64-linux-android"     "x86_64-linux-android" "x86_64" & pids+=("$!")
+    build_arch "x86"         "i686-linux-android"       "i686-linux-android" "i686" & pids+=("$!")
+
+    for pid in "${pids[@]}"; do
+        wait "${pid}"
+    done
+    echo "[✔] Finished Python ${ver}."
+done
