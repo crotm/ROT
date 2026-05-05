@@ -11,6 +11,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  # Use the original repo name
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
@@ -24,8 +25,13 @@ jobs:
 
       - name: Set up Environment Variables
         run: |
-          echo "IMAGE_ID=${{ env.REGISTRY }}/${{ env.IMAGE_NAME,, }}" >> $GITHUB_ENV
-          echo "IMAGE_TAG=env-$(sha256sum Dockerfile | cut -c1-16)" >> $GITHUB_ENV
+          # Perform lowercase conversion using standard Shell, NOT GitHub expressions
+          LOWER_IMAGE=$(echo "${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+          echo "IMAGE_ID=${{ env.REGISTRY }}/${LOWER_IMAGE}" >> $GITHUB_ENV
+          
+          # Generate Tag based on Dockerfile hash
+          DOCKER_HASH=$(sha256sum Dockerfile | cut -c1-16)
+          echo "IMAGE_TAG=env-${DOCKER_HASH}" >> $GITHUB_ENV
 
       - name: Log in to GHCR
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
@@ -71,5 +77,5 @@ jobs:
           gh release delete "$TAG_NAME" --cleanup-tag -y || true
           gh release create "$TAG_NAME" output/*.tar.xz \
             --title "Rolling Release: pyb" \
-            --notes "Hybrid AOSP/Termux. Parallel Architecture Build. Source: Official Python FTP." \
+            --notes "Python FTP Source. NDK 27. API 24. Parallel Arch Build." \
             --target ${{ github.sha }}

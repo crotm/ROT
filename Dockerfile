@@ -11,6 +11,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip dpkg xz-utils patch \
     && rm -rf /var/lib/apt/lists/*
 
-RUN wget -q https://dl.google.com/android/artifacts/android-ndk-${NDK_VERSION}-linux.zip -O ndk.zip || \
-    wget -q https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip -O ndk.zip && \
+RUN wget -q https://dl.google.com/android/repository/android-ndk-${NDK_VERSION}-linux.zip -O ndk.zip && \
     unzip -q ndk.zip -d /opt/ && rm ndk.zip && mv /opt/android-ndk-${NDK_VERSION} /opt/android-ndk
