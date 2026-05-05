@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# CPython Android Ultimate Cross-Compiler (Hybrid AOSP/Termux)
-# Source: python.org/ftp | Targets: 3.13, 3.14, 3.15
+# CPython Android Ultimate Cross-Compiler
+# Source: Direct FTP URLs | Targets: 3.13.13, 3.14.5rc1, 3.15.0a8
 # ==============================================================================
 set -euo pipefail
 
-# Specific FTP versions (Note: 3.15 is alpha-dependent)
-PYTHON_VERSIONS=("3.13.0" "3.14.0a4" "3.15.0a1")
+# Specific URLs provided by the user
+PYTHON_URLS=(
+    "https://www.python.org/ftp/python/3.13.13/Python-3.13.13.tar.xz"
+    "https://www.python.org/ftp/python/3.14.5/Python-3.14.5rc1.tar.xz"
+    "https://www.python.org/ftp/python/3.15.0/Python-3.15.0a8.tar.xz"
+)
+
 API_LEVEL=24
 NDK_HOME="${ANDROID_NDK_HOME:-/opt/android-ndk}"
 TOOLCHAIN="${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64"
@@ -15,6 +20,7 @@ WORKSPACE_DIR="$(pwd)"
 OUTPUT_DIR="${WORKSPACE_DIR}/output"
 TERMUX_PREFIX="/data/data/com.termux/files/usr"
 
+# Base configuration arguments
 TERMUX_CONFIGURE_ARGS=(
     "ac_cv_file__dev_ptmx=yes" "ac_cv_file__dev_ptc=no" "ac_cv_func_wcsftime=no"
     "ac_cv_func_ftime=no" "ac_cv_func_faccessat=no" "ac_cv_func_link=no"
@@ -65,20 +71,19 @@ fetch_termux_deps() {
 
 mkdir -p "${OUTPUT_DIR}"
 
-for ver in "${PYTHON_VERSIONS[@]}"; do
+for url in "${PYTHON_URLS[@]}"; do
+    filename=$(basename "${url}")
+    src_dir="${filename%.tar.xz}"
+    ver=$(echo "${src_dir}" | cut -d- -f2)
+
     echo -e "\n=================================================="
     echo " 🐍 Processing Python ${ver}"
     echo "=================================================="
 
-    src_dir="Python-${ver}"
-    tarball="${src_dir}.tar.xz"
-    
     if [ ! -d "${src_dir}" ]; then
-        echo "[*] Downloading source from python.org..."
-        wget -q "https://www.python.org/ftp/python/${ver%%[a-z]*}/Python-${ver}.tar.xz" || {
-            echo "[!] Version ${ver} not found on FTP. Skipping."; continue
-        }
-        tar -xf "${tarball}"
+        echo "[*] Downloading: ${filename}"
+        wget -q "${url}"
+        tar -xf "${filename}"
     fi
 
     if [ -d "patches/cpython" ]; then
@@ -131,15 +136,17 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
         make install > "install.log" 2>&1
         
         find "${dest}/lib" -name "*.so" -exec "${STRIP}" --strip-all {} +
-        rm -rf "${dest}/lib/python${ver%.*}/test" || true
+        # Cleanup tests based on major.minor
+        py_short=$(echo "${ver}" | cut -d. -f1,2)
+        rm -rf "${dest}/lib/python${py_short}/test" || true
         echo "   [<<<] Thread complete: ${arch}."
     }
 
     pids=()
     build_arch "arm64-v8a"   "aarch64-linux-android"    "aarch64-linux-android" "aarch64" & pids+=("$!")
-    build_arch "armeabi-v7a" "armv7a-linux-androideabi" "armv7a-linux-androideabi" "arm" & pids+=("$!)
-    build_arch "x86_64"      "x86_64-linux-android"     "x86_64-linux-android" "x86_64" & pids+=("$!)
-    build_arch "x86"         "i686-linux-android"       "i686-linux-android" "i686" & pids+=("$!)
+    build_arch "armeabi-v7a" "armv7a-linux-androideabi" "armv7a-linux-androideabi" "arm" & pids+=("$!")
+    build_arch "x86_64"      "x86_64-linux-android"     "x86_64-linux-android" "x86_64" & pids+=("$!")
+    build_arch "x86"         "i686-linux-android"       "i686-linux-android" "i686" & pids+=("$!")
 
     for pid in "${pids[@]}"; do wait "${pid}"; done
     echo "[✔] Finished Python ${ver}."

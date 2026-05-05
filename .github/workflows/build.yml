@@ -28,7 +28,7 @@ jobs:
           echo "IMAGE_TAG=env-$(sha256sum Dockerfile | cut -c1-16)" >> $GITHUB_ENV
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -71,5 +71,5 @@ jobs:
           gh release delete "$TAG_NAME" --cleanup-tag -y || true
           gh release create "$TAG_NAME" output/*.tar.xz \
             --title "Rolling Release: pyb" \
-            --notes "Python FTP Source. NDK 27. API 24." \
+            --notes "Hybrid AOSP/Termux. Parallel Architecture Build. Source: Official Python FTP." \
             --target ${{ github.sha }}
