@@ -5,7 +5,7 @@
 # ==============================================================================
 set -euo pipefail
 
-# Specific URLs provided by the user
+# Specific URLs provided
 PYTHON_URLS=(
     "https://www.python.org/ftp/python/3.13.13/Python-3.13.13.tar.xz"
     "https://www.python.org/ftp/python/3.14.5/Python-3.14.5rc1.tar.xz"
@@ -103,51 +103,4 @@ for url in "${PYTHON_URLS[@]}"; do
     mkdir -p "${native_dir}"
     (
         cd "${native_dir}"
-        ../"${src_dir}"/configure --prefix="${WORKSPACE_DIR}/prefix" > native_config.log 2>&1
-        make -j"$(nproc)" > native_make.log 2>&1
-    )
-
-    build_arch() {
-        local arch="$1"; local triple="$2"; local cc_target="$3"; local termux_arch="$4"
-        local build_dir="build-${ver}-${arch}"
-        local dest="${OUTPUT_DIR}/${ver}/${arch}"
-        local sysroot="${WORKSPACE_DIR}/${build_dir}/sysroot"
-        
-        echo "   [>>>] Starting ${arch}..."
-        mkdir -p "${sysroot}" && cd "${build_dir}"
-        fetch_termux_deps "${termux_arch}" "${sysroot}"
-
-        export CC="${TOOLCHAIN}/bin/${cc_target}${API_LEVEL}-clang"
-        export CXX="${TOOLCHAIN}/bin/${cc_target}${API_LEVEL}-clang++"
-        export AR="${TOOLCHAIN}/bin/llvm-ar"
-        export RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
-        export STRIP="${TOOLCHAIN}/bin/llvm-strip"
-        
-        export PKG_CONFIG=""
-        export PKG_CONFIG_LIBDIR="${sysroot}${TERMUX_PREFIX}/lib/pkgconfig"
-        export CFLAGS="-O3 -fPIC -I${sysroot}${TERMUX_PREFIX}/include"
-        export LDFLAGS="-Wl,-O1 -L${sysroot}${TERMUX_PREFIX}/lib -landroid-posix-semaphore -landroid-support"
-
-        ../"${src_dir}"/configure --host="${triple}" --build=x86_64-linux-gnu \
-            --with-build-python="../${native_dir}/python" --prefix="${dest}" \
-            "${TERMUX_CONFIGURE_ARGS[@]}" > "configure.log" 2>&1 || exit 1
-
-        make -j"$(nproc)" > "make.log" 2>&1
-        make install > "install.log" 2>&1
-        
-        find "${dest}/lib" -name "*.so" -exec "${STRIP}" --strip-all {} +
-        # Cleanup tests based on major.minor
-        py_short=$(echo "${ver}" | cut -d. -f1,2)
-        rm -rf "${dest}/lib/python${py_short}/test" || true
-        echo "   [<<<] Thread complete: ${arch}."
-    }
-
-    pids=()
-    build_arch "arm64-v8a"   "aarch64-linux-android"    "aarch64-linux-android" "aarch64" & pids+=("$!")
-    build_arch "armeabi-v7a" "armv7a-linux-androideabi" "armv7a-linux-androideabi" "arm" & pids+=("$!")
-    build_arch "x86_64"      "x86_64-linux-android"     "x86_64-linux-android" "x86_64" & pids+=("$!")
-    build_arch "x86"         "i686-linux-android"       "i686-linux-android" "i686" & pids+=("$!")
-
-    for pid in "${pids[@]}"; do wait "${pid}"; done
-    echo "[✔] Finished Python ${ver}."
-done
+        ../"${src_dir}"/configure --prefix=
